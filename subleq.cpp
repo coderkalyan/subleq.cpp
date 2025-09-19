@@ -70,12 +70,21 @@ struct read<memory<Head, Tail...>, constant<0>> {
 template <typename Memory, typename Index>
 using read_t = typename read<Memory, Index>::type;
 
+template <typename Value, typename Memory>
+struct prepend;
+
+template <typename Head, typename... Tail>
+struct prepend<Head, memory<Tail...>> {
+    using type = memory<Head, Tail...>;
+};
+
 template <typename Memory, i32 Index, typename Value>
 struct write;
 
 template <typename Head, typename... Tail, i32 Index, typename Value>
 struct write<memory<Head, Tail...>, Index, Value> {
-    using type = typename write<memory<Tail...>, Index - 1, Value>::type::words;
+    using tail = typename write<memory<Tail...>, Index - 1, Value>::type;
+    using type = typename prepend<Head, tail>::type;
 };
 
 template <typename Head, typename... Tail, typename Value>
@@ -132,6 +141,7 @@ struct update<Memory,
               Value,
               memory<Tape...>,
               enable_if_t<(Index >= 0)>> {
+    using M = Memory;
     using load = read_t<Memory, constant<Index>>;
     using modify = typename sub<load, Value>::result;
     using branch = typename leq<modify>::result;
@@ -175,6 +185,7 @@ struct cycle<Memory, program_counter<constant<Index>>, memory<Tape...>> {
     // Fetch the instruction from memory.
     using op = fetch_t<Memory, Index>;
 
+    using input = Memory;
     // Read the operands A and B, and perform the subtraction.
     // The RMW operation is handled atomically in the update
     // step in order to make use of SFINAE for memory mapped output.
@@ -204,7 +215,7 @@ struct execute<Memory,
                program_counter<constant<Index>>,
                constant<Cycles>,
                memory<Tape...>,
-               enable_if_t<(Index >= 0) && (Cycles < 10)>> {
+               enable_if_t<(Index >= 0)>> {
     using step =
         cycle<Memory, program_counter<constant<Index>>, memory<Tape...>>;
     using next = execute<typename step::memory,
@@ -222,16 +233,30 @@ struct execute<Memory,
                program_counter<constant<Index>>,
                constant<Cycles>,
                memory<Tape...>,
-               enable_if_t<(Index < 0) || (Cycles >= 10)>> {
+               enable_if_t<(Index < 0)>> {
     static constexpr auto result = output<memory<Tape...>>();
 };
 
 // clang-format off
 using program = memory<
-    constant<9>, constant<-1>, constant<3>,
-    constant<10>, constant<-1>, constant<6>,
-    constant<0>, constant<0>, constant<-1>,
-    constant<72>, constant<105>, constant<0>
+    constant<12>, constant<12>, constant<3>,
+    constant<36>, constant<37>, constant<6>,
+    constant<37>, constant<12>, constant<9>,
+    constant<37>, constant<37>, constant<12>,
+    constant<0>, constant<-1>, constant<15>,
+    constant<38>, constant<36>, constant<18>,
+    constant<12>, constant<12>, constant<21>,
+    constant<53>, constant<37>, constant<24>,
+    constant<37>, constant<12>, constant<27>,
+    constant<37>, constant<37>, constant<30>,
+    constant<36>, constant<12>, constant<-1>,
+    constant<37>, constant<37>, constant<0>,
+    constant<39>, constant<0>, constant<-1>,
+    constant<72>, constant<101>, constant<108>,
+    constant<108>, constant<111>, constant<44>,
+    constant<32>, constant<87>, constant<111>,
+    constant<114>, constant<108>, constant<100>,
+    constant<33>, constant<10>, constant<53>
 >;
 // clang-format on
 
@@ -239,11 +264,14 @@ using pc = program_counter<constant<0>>;
 // using op = fetch<program, pc>;
 
 int main(void) {
-    // cycle<program, pc> cycle;
-    // (void) output<decltype(cycle)::memory>();
+    // using mem = memory<constant<1>, constant<2>, constant<3>>;
+    // using written = write_t<mem, 0, constant<42>>;
+    // (void) output<typename written::words>();
+    // cycle<program, pc, memory<>> cycle;
+    // (void) output<decltype(cycle)::rmw::type>();
 
     execute<program, pc, constant<0>, memory<>> computer;
-    // (void) output<decltype(computer)::memory>();
+    (void) output<decltype(computer)::memory>();
 
     return 0;
 }
